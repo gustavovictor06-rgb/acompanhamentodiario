@@ -152,6 +152,16 @@
   .chart-legend .item{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text-secondary);}
   .chart-legend .swatch{width:10px;height:10px;border-radius:3px;}
 
+  /* TIPOS CHART */
+  .tipos-grid{display:flex;flex-direction:column;gap:10px;}
+  .tipo-row{display:flex;align-items:center;gap:12px;}
+  .tipo-name{font-size:13px;font-weight:600;color:var(--text-secondary);width:140px;flex-shrink:0;}
+  .tipo-bar-wrap{flex:1;background:var(--bg-input);border-radius:999px;height:10px;overflow:hidden;}
+  .tipo-bar{height:100%;border-radius:999px;transition:width .4s ease;}
+  .tipo-count{font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--text-primary);width:28px;text-align:right;flex-shrink:0;}
+  .tipo-pct{font-size:11px;color:var(--text-faint);width:36px;text-align:right;flex-shrink:0;}
+  .tipos-empty{color:var(--text-faint);font-size:13.5px;text-align:center;padding:24px 0;}
+
   /* DEMANDA INLINE NO FORM */
   .demanda-inline{margin-top:18px;border-top:1px solid var(--border-soft);padding-top:18px;}
   .demanda-question{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;}
@@ -349,9 +359,30 @@
     </div>
 
     <div class="card">
-      <h2><span class="dot"></span>Comparativo mensal</h2>
-      <div class="chart-sub">Mês atual vs. mês anterior</div>
-      <div id="monthChart"></div>
+      <h2><span class="dot"></span>Relatório semanal</h2>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button class="btn-ghost" id="btnWeekPrev" onclick="changeWeek(-1)" style="padding:6px 12px;font-size:13px;">← Anterior</button>
+          <span id="weekChartLabel" style="font-size:13px;color:var(--text-secondary);white-space:nowrap;"></span>
+          <button class="btn-ghost" id="btnWeekNext" onclick="changeWeek(1)" style="padding:6px 12px;font-size:13px;">Próxima →</button>
+          <button class="btn-ghost" id="btnWeekToday" onclick="goToCurrentWeek()" style="padding:6px 12px;font-size:12px;color:var(--accent);border-color:var(--accent-dim);">Hoje</button>
+        </div>
+        <div class="period-toggle" style="margin-bottom:0;">
+          <button type="button" class="period-opt active" data-chart="ambas" onclick="setChartFilter('ambas',this)">Todas</button>
+          <button type="button" class="period-opt" data-chart="efetuada" onclick="setChartFilter('efetuada',this)">Efetuadas</button>
+          <button type="button" class="period-opt" data-chart="recebida" onclick="setChartFilter('recebida',this)">Recebidas</button>
+        </div>
+      </div>
+      <div class="chart-legend" id="chartLegend">
+        <div class="item"><span class="swatch" style="background:var(--efetuada)"></span>Efetuadas</div>
+        <div class="item"><span class="swatch" style="background:var(--recebida)"></span>Recebidas</div>
+      </div>
+      <div id="weekChart"></div>
+    </div>
+
+    <div class="card">
+      <h2><span class="dot"></span>Tipos de ligação <span style="font-size:12px;font-weight:500;color:var(--text-faint)" id="tiposWeekLabel"></span></h2>
+      <div id="tiposChart"></div>
     </div>
 
   </div><!-- /page-ligacoes -->
@@ -461,43 +492,172 @@ document.getElementById('periodToggle').addEventListener('click',e=>{
   renderStats();
 });
 
-// ---- CHART ----
-function monthRange(offset){ const now=new Date(); return{from:new Date(now.getFullYear(),now.getMonth()+offset,1),to:new Date(now.getFullYear(),now.getMonth()+offset+1,1)}; }
-function countInMonth(list,from,to){ const f=list.filter(c=>{const d=new Date(c.dataHora);return d>=from&&d<to;}); return{efetuadas:f.filter(c=>c.tipoChamada==='efetuada').length,recebidas:f.filter(c=>c.tipoChamada==='recebida').length,total:f.length}; }
+// ---- CHART SEMANAL ----
+let weekOffset = 0;
+let chartFilter = 'ambas';
+
+function changeWeek(dir){ weekOffset += dir; renderWeekChart(); renderTiposChart(); }
+function goToCurrentWeek(){ weekOffset = 0; renderWeekChart(); renderTiposChart(); }
+function setChartFilter(type, el){
+  chartFilter = type;
+  document.querySelectorAll('[data-chart]').forEach(b=>b.classList.toggle('active', b===el));
+  const leg = document.getElementById('chartLegend');
+  if(type==='ambas') leg.innerHTML='<div class="item"><span class="swatch" style="background:var(--efetuada)"></span>Efetuadas</div><div class="item"><span class="swatch" style="background:var(--recebida)"></span>Recebidas</div>';
+  else if(type==='efetuada') leg.innerHTML='<div class="item"><span class="swatch" style="background:var(--efetuada)"></span>Efetuadas</div>';
+  else leg.innerHTML='<div class="item"><span class="swatch" style="background:var(--recebida)"></span>Recebidas</div>';
+  renderWeekChart(); renderTiposChart();
+}
+
 function capitalize(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
-function renderMonthChart(){
-  const pr=monthRange(-1),cr=monthRange(0);
-  const prev=countInMonth(calls,pr.from,pr.to),curr=countInMonth(calls,cr.from,cr.to);
-  const pLabel=capitalize(pr.from.toLocaleDateString('pt-BR',{month:'long'}));
-  const cLabel=capitalize(cr.from.toLocaleDateString('pt-BR',{month:'long'}));
-  const maxVal=Math.max(prev.total,curr.total,1);
-  const chartH=160; const scale=v=>(v/maxVal)*chartH;
-  const barW=26,gapInner=8,gapGroup=64,groupW=barW*3+gapInner*2;
-  const svgW=groupW*2+gapGroup+60,svgH=chartH+60;
-  const groups=[{label:pLabel,...prev},{label:cLabel,...curr}];
+
+function renderWeekChart(){
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const diffToMon = (dayOfWeek === 0) ? -6 : 1 - dayOfWeek;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diffToMon + weekOffset * 7);
+  monday.setHours(0,0,0,0);
+
+  // Desabilita "Próxima" se já estamos na semana atual ou além
+  const isCurrentWeek = weekOffset >= 0;
+  document.getElementById('btnWeekNext').style.opacity = isCurrentWeek ? '.35' : '1';
+  document.getElementById('btnWeekNext').style.pointerEvents = isCurrentWeek ? 'none' : 'auto';
+  document.getElementById('btnWeekToday').style.opacity = weekOffset === 0 ? '.35' : '1';
+  document.getElementById('btnWeekToday').style.pointerEvents = weekOffset === 0 ? 'none' : 'auto';
+
+  const diasNomes = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+  const dias = [];
+  for(let i=0;i<7;i++){
+    const d = new Date(monday);
+    d.setDate(monday.getDate()+i);
+    const next = new Date(d); next.setDate(d.getDate()+1);
+    const ef  = calls.filter(c=>{ const cd=new Date(c.dataHora); return cd>=d&&cd<next&&c.tipoChamada==='efetuada'; }).length;
+    const rec = calls.filter(c=>{ const cd=new Date(c.dataHora); return cd>=d&&cd<next&&c.tipoChamada==='recebida'; }).length;
+    dias.push({ nome: diasNomes[i], dateNum: d.getDate(), ef, rec, isToday: d.toDateString()===now.toDateString() });
+  }
+
+  // Label
+  const fimSem = new Date(monday); fimSem.setDate(monday.getDate()+6);
+  document.getElementById('weekChartLabel').textContent =
+    `${monday.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})} – ${fimSem.toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'})}`;
+
+  // Dimensões — 1 barra por dia se filtrado, 2 se ambas
+  const showEf  = chartFilter==='ambas'||chartFilter==='efetuada';
+  const showRec = chartFilter==='ambas'||chartFilter==='recebida';
+  const numBars = (showEf?1:0)+(showRec?1:0);
+  const barW=24, gap=8, groupGap=24;
+  const groupW = barW*numBars + (numBars>1?gap:0);
+  const paddingL=36, paddingR=20;
+  const svgW = paddingL + dias.length*(groupW+groupGap) - groupGap + paddingR;
+  const chartH=160, svgH=chartH+56;
+
+  const maxVal = Math.max(...dias.map(d=>{
+    let v=0; if(showEf)v+=d.ef; if(showRec)v+=d.rec; return v;
+  }), 1);
+  const scale = v=>(v/maxVal)*chartH;
+
+  // Guias
+  let guias='';
+  for(let i=1;i<=4;i++){
+    const yVal=Math.round((maxVal/4)*i);
+    const y=chartH-scale(yVal)+20;
+    guias+=`<line x1="${paddingL}" y1="${y}" x2="${svgW-paddingR}" y2="${y}" stroke="#1a212b" stroke-width="1"/>`;
+    guias+=`<text x="${paddingL-6}" y="${y+4}" text-anchor="end" font-family="JetBrains Mono,monospace" font-size="10" fill="#5b6673">${yVal}</text>`;
+  }
+
   let bars='';
-  groups.forEach((g,gi)=>{
-    const gx=30+gi*(groupW+gapGroup);
-    [{v:g.efetuadas,color:'var(--efetuada)'},{v:g.recebidas,color:'var(--recebida)'},{v:g.total,color:'#4a5566'}].forEach((item,i)=>{
-      const x=gx+i*(barW+gapInner),h=Math.max(scale(item.v),item.v>0?3:0),y=chartH-h+20;
-      bars+=`<rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="4" fill="${item.color}"/>`;
-      bars+=`<text x="${x+barW/2}" y="${y-8}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="12" fill="#8b97a5">${item.v}</text>`;
-    });
-    bars+=`<text x="${gx+groupW/2}" y="${chartH+44}" text-anchor="middle" font-family="Manrope,sans-serif" font-size="13" font-weight="700" fill="#eef2f6">${g.label}</text>`;
+  dias.forEach((d,i)=>{
+    const gx = paddingL + i*(groupW+groupGap);
+    const cx = gx + groupW/2;
+    let barIdx=0;
+
+    if(d.isToday){
+      bars+=`<rect x="${gx-6}" y="14" width="${groupW+12}" height="${chartH+10}" rx="6" fill="rgba(53,224,194,.04)" stroke="rgba(53,224,194,.15)" stroke-width="1"/>`;
+    }
+
+    if(showEf){
+      const x=gx+barIdx*(barW+gap);
+      const h=Math.max(scale(d.ef),d.ef>0?3:0);
+      const y=chartH-h+20;
+      bars+=`<rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="4" fill="${d.isToday?'var(--efetuada)':'rgba(53,224,194,.5)'}"/>`;
+      if(d.ef>0) bars+=`<text x="${x+barW/2}" y="${y-6}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="var(--efetuada)">${d.ef}</text>`;
+      barIdx++;
+    }
+    if(showRec){
+      const x=gx+barIdx*(barW+gap);
+      const h=Math.max(scale(d.rec),d.rec>0?3:0);
+      const y=chartH-h+20;
+      bars+=`<rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="4" fill="${d.isToday?'var(--recebida)':'rgba(122,162,255,.5)'}"/>`;
+      if(d.rec>0) bars+=`<text x="${x+barW/2}" y="${y-6}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="var(--recebida)">${d.rec}</text>`;
+    }
+
+    bars+=`<text x="${cx}" y="${chartH+36}" text-anchor="middle" font-family="Manrope,sans-serif" font-size="12" font-weight="${d.isToday?'800':'600'}" fill="${d.isToday?'var(--accent)':'#8b97a5'}">${d.nome}</text>`;
+    bars+=`<text x="${cx}" y="${chartH+50}" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="${d.isToday?'var(--accent-dim)':'#5b6673'}">${d.dateNum}</text>`;
   });
-  document.getElementById('monthChart').innerHTML=`
-    <div class="chart-legend">
-      <div class="item"><span class="swatch" style="background:var(--efetuada)"></span>Efetuadas</div>
-      <div class="item"><span class="swatch" style="background:var(--recebida)"></span>Recebidas</div>
-      <div class="item"><span class="swatch" style="background:#4a5566"></span>Total</div>
-    </div>
-    <svg viewBox="0 0 ${svgW} ${svgH}" style="width:100%;max-width:480px;height:auto;display:block;">
-      <line x1="0" y1="${chartH+20}" x2="${svgW}" y2="${chartH+20}" stroke="#1f2733" stroke-width="1"/>
+
+  document.getElementById('weekChart').innerHTML=`
+    <svg viewBox="0 0 ${svgW} ${svgH}" style="width:100%;height:auto;display:block;overflow:visible;">
+      ${guias}
+      <line x1="${paddingL}" y1="${chartH+20}" x2="${svgW-paddingR}" y2="${chartH+20}" stroke="#202834" stroke-width="1.5"/>
       ${bars}
     </svg>`;
 }
 
-// ---- TABLE ----
+// ---- CHART TIPOS ----
+const TIPO_COLORS = {
+  'Cancelamento':    '#f2685f',
+  'Pós Cancelamento':'#f59e0b',
+  'Transferência':   '#7aa2ff',
+  'Retenção':        '#35e0c2',
+  'Reativação':      '#a78bfa',
+  'Dúvida':          '#fb923c',
+  'Outros':          '#8b97a5',
+};
+
+function renderTiposChart(){
+  // Mesma janela de semana do gráfico semanal
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const diffToMon = (dayOfWeek===0) ? -6 : 1-dayOfWeek;
+  const monday = new Date(now);
+  monday.setDate(now.getDate()+diffToMon+weekOffset*7);
+  monday.setHours(0,0,0,0);
+  const sunday = new Date(monday); sunday.setDate(monday.getDate()+7);
+
+  // Filtra pelo mesmo filtro de chamada do gráfico
+  const filtered = calls.filter(c=>{
+    const cd = new Date(c.dataHora);
+    const chamadaOk = chartFilter==='ambas' || c.tipoChamada===chartFilter;
+    return cd>=monday && cd<sunday && chamadaOk && c.tipoLigacao;
+  });
+
+  // Label
+  const fimSem = new Date(monday); fimSem.setDate(monday.getDate()+6);
+  document.getElementById('tiposWeekLabel').textContent =
+    `— ${monday.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})} a ${fimSem.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})}`;
+
+  const wrap = document.getElementById('tiposChart');
+  if(!filtered.length){ wrap.innerHTML='<div class="tipos-empty">Nenhuma ligação nessa semana.</div>'; return; }
+
+  // Conta por tipo
+  const contagem = {};
+  filtered.forEach(c=>{ contagem[c.tipoLigacao]=(contagem[c.tipoLigacao]||0)+1; });
+  const total = filtered.length;
+  const sorted = Object.entries(contagem).sort((a,b)=>b[1]-a[1]);
+
+  wrap.innerHTML = '<div class="tipos-grid">'+sorted.map(([tipo,qtd])=>{
+    const pct = Math.round((qtd/total)*100);
+    const color = TIPO_COLORS[tipo] || '#8b97a5';
+    return `<div class="tipo-row">
+      <div class="tipo-name">${tipo}</div>
+      <div class="tipo-bar-wrap">
+        <div class="tipo-bar" style="width:${pct}%;background:${color};opacity:.85;"></div>
+      </div>
+      <div class="tipo-count">${qtd}</div>
+      <div class="tipo-pct">${pct}%</div>
+    </div>`;
+  }).join('')+'</div>';
+}
 function escapeHtml(str){ const d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
 function getFilters(){ return{date:document.getElementById('filterDate').value,chamada:document.getElementById('filterChamada').value,tipo:document.getElementById('filterTipo').value,search:document.getElementById('filterSearch').value.trim().toLowerCase()}; }
 function applyFilters(list){
@@ -695,7 +855,7 @@ function checkAlerts(){
 }
 
 // ---- INIT ----
-function renderAll(){ renderStats(); renderMonthChart(); renderTable(); checkAlerts(); }
+function renderAll(){ renderStats(); renderWeekChart(); renderTiposChart(); renderTable(); checkAlerts(); }
 renderAll();
 </script>
 </body>
